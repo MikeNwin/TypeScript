@@ -674,6 +674,7 @@ namespace ts {
                     }
                 }
                 else {
+                    //check: if we imported a file with packageId, and that file has changed, then add to unknownModuleNames
                     resolvesToAmbientModuleInNonModifiedFile = moduleNameResolvesToAmbientModuleInNonModifiedFile(moduleName, oldProgramState);
                 }
 
@@ -824,6 +825,10 @@ namespace ts {
 
                 // if file has passed all checks it should be safe to reuse it
                 newSourceFiles.push(newSourceFile);
+            }
+            else {
+                //if haven't changed, go through imports/
+                //if import points to package, check that that file didn't change
             }
 
             if (oldProgram.structureIsReused !== StructureIsReused.Completely) {
