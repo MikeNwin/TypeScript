@@ -647,6 +647,7 @@ namespace ts {
                 if (file === oldSourceFile) {
                     const oldResolvedModule = oldSourceFile && oldSourceFile.resolvedModules.get(moduleName);
                     if (oldResolvedModule) {
+                        //TOOD: HERE!!!
                         debugger; //TODO: check that this is working
                         //If oldResolvedModule had a packageId and its file has been modified, must redo resolution as packageId will probably change
                         //if (oldResolvedModule.packageId && ts.contains(oldProgramState.modifiedFilePaths, oldResolvedModule.resolvedFileName)) {
@@ -732,7 +733,7 @@ namespace ts {
                 // at least one of declarations should come from non-modified source file
                 const firstUnmodifiedFile = forEach(ambientModule.declarations, d => {
                     const f = getSourceFileOfNode(d);
-                    return !contains(oldProgramState.modifiedFilePaths, f.path) && f;
+                    return !isModified(f, oldProgramState) && f;
                 });
 
                 if (!firstUnmodifiedFile) {
@@ -744,6 +745,11 @@ namespace ts {
                 }
                 return true;
             }
+        }
+
+        //mv
+        function isModified(f: SourceFile, oldProgramState: OldProgramState): boolean {
+            return contains(oldProgramState.modifiedFilePaths, f.path);
         }
 
         function tryReuseStructureFromOldProgram(): StructureIsReused {
@@ -780,6 +786,36 @@ namespace ts {
                 const newSourceFile = host.getSourceFileByPath
                     ? host.getSourceFileByPath(oldSourceFile.fileName, oldSourceFile.path, options.target)
                     : host.getSourceFile(oldSourceFile.fileName, options.target);
+
+                //Here is where we should deal with redirects.
+                /*
+                SO:::
+                host.getSourceFileByPath will always return a new source file. It doesn't respect redirects or nothin'.
+                oldProgram.getRedirectUnderlyingSourceFile()
+                */
+                if (oldSourceFile.redirect) {
+                    const { underlying } = oldSourceFile.redirect;
+                    if (newSourceFile !== underlying) {
+                        //The redirect is broken. This has the effect of adding a new file.
+                        return oldProgram.structureIsReused = StructureIsReused.Not;
+                    } else {
+                        //Still a redirect. Identify is preserved, so reuse the old redirect.
+                        filePaths.push(oldSourceFile.path);
+                        newSourceFiles.push(oldSourceFile);
+                        continue;
+                    }
+                }
+                if (oldSourceFile.hasRedirect) {
+                    if (newSourceFile !== oldSourceFile) {
+                        //Redirect is broken.
+                        return oldProgram.structureIsReused = StructureIsReused.Not;
+                    } else {
+                        //Redirect is still OK.
+                        filePaths.push(oldSourceFile.path);
+                        newSourceFiles.push(oldSourceFile);
+                        continue;
+                    }
+                }
 
                 if (!newSourceFile) {
                     return oldProgram.structureIsReused = StructureIsReused.Not;
@@ -826,10 +862,10 @@ namespace ts {
                 // if file has passed all checks it should be safe to reuse it
                 newSourceFiles.push(newSourceFile);
             }
-            else {
+            //else {
                 //if haven't changed, go through imports/
                 //if import points to package, check that that file didn't change
-            }
+            //}
 
             if (oldProgram.structureIsReused !== StructureIsReused.Completely) {
                 return oldProgram.structureIsReused;
@@ -1535,16 +1571,24 @@ namespace ts {
             }
         }
 
-        function createDuplicateSourceFile(sf: SourceFile, fileName: string, path: Path): SourceFile {
-            const c: SourceFile = Object.create(sf);
-            c.fileName = fileName;
-            c.path = path;
-            c.redirect = sf;
-            Object.defineProperties(c, {
-                id: { get(this: SourceFile) { return this.redirect.id }, set(this: SourceFile, value) { this.redirect.id = value } },
-                symbol: { get(this: SourceFile) { return this.redirect.symbol }, set(this: SourceFile, value) { this.redirect.symbol = value } },
+        function createRedirectSourceFile(redirectTo: SourceFile, underlying: SourceFile, fileName: string, path: Path): SourceFile {
+            redirectTo.hasRedirect = true;
+
+            const r: SourceFile = Object.create(redirectTo);
+            r.fileName = fileName;
+            r.path = path;
+            r.redirect = { redirectTo, underlying }; //Need this property any more?
+            Object.defineProperties(r, {
+                id: {
+                    get(this: SourceFile) { return this.redirect.redirectTo.id },
+                    set(this: SourceFile, value: SourceFile["id"]) { this.redirect.redirectTo.id = value },
+                },
+                symbol: {
+                    get(this: SourceFile) { return this.redirect.redirectTo.symbol },
+                    set(this: SourceFile, value: SourceFile["symbol"]) { this.redirect.redirectTo.symbol = value },
+                },
             });
-            return c;
+            return r;
         }
 
         // Get source file from normalized fileName
@@ -1580,15 +1624,6 @@ namespace ts {
                 return file;
             }
 
-            const packageKey = packageId && `${packageId.name}@${packageId.version}`;
-            const fileFromPackageId = packageKey && packageIdToSourceFile.get(packageKey);
-            if (fileFromPackageId) {
-                const dupFile = createDuplicateSourceFile(fileFromPackageId, fileName, path);
-                filesByName.set(path, dupFile);
-                files.push(dupFile);
-                return dupFile;
-            }
-
             // We haven't looked for this file, do so now and cache result
             const file = host.getSourceFile(fileName, options.target, hostErrorMessage => {
                 if (refFile !== undefined && refPos !== undefined && refEnd !== undefined) {
@@ -1600,7 +1635,19 @@ namespace ts {
                 }
             });
 
-            if (file && packageId) packageIdToSourceFile.set(packageKey, file);
+            const packageKey = packageId && `${packageId.name}@${packageId.version}`;
+            const fileFromPackageId = packageKey && packageIdToSourceFile.get(packageKey);
+            if (fileFromPackageId) {
+                const dupFile = createRedirectSourceFile(fileFromPackageId, file, fileName, path);
+                filesByName.set(path, dupFile);
+                files.push(dupFile);
+                return dupFile;
+            }
+
+            if (file && packageId) {
+                // If we got here, then this is the first source file to have this packageId.
+                packageIdToSourceFile.set(packageKey, file);
+            }
             filesByName.set(path, file);
             if (file) {
                 sourceFilesFoundSearchingNodeModules.set(path, currentNodeModulesDepth > 0);

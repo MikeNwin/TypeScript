@@ -2282,7 +2282,10 @@ namespace ts {
         /* @internal */ path: Path;
         text: string;
 
-        /* @internal */ redirect?: SourceFile | undefined; //doc
+        //doc
+        /* @internal */ redirect?: { readonly redirectTo: SourceFile, readonly underlying: SourceFile } | undefined;
+        //We need to know whether a source file is redirected to, so we can invalidate the whole program if it is changed.
+        /* @internal */ hasRedirect?: boolean;
 
         amdDependencies: AmdDependency[];
         moduleName: string;
@@ -2439,12 +2442,20 @@ namespace ts {
         /* @internal */ structureIsReused?: StructureIsReused;
 
         /* @internal */ getSourceFileFromReference(referencingFile: SourceFile, ref: FileReference): SourceFile | undefined;
+
+        //doc
+        //This is necessary to have so we can know whether to re-use the old source file.
+        //ACTUALLY, we just store it on the redirect...
+        ///* @internal */ getRedirectUnderlyingSourceFile(redirectSourceFile: SourceFile): SourceFile;
     }
 
     /* @internal */
     export const enum StructureIsReused {
+        /** Don't reuse old program structure at all. */
         Not         = 0,
+        /** Redo module resolution as necessary, but use old program structure as much as possible. */
         SafeModules = 1 << 0,
+        /** Don't redo module resolution. */
         Completely  = 1 << 1,
     }
 

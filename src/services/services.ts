@@ -1218,22 +1218,25 @@ namespace ts {
                     return undefined;
                 }
 
-                const oldSourceFile = program && program.getSourceFileByPath(path);
-                if (!(oldSourceFile && oldSourceFile.redirect)) {
+                let oldSourceFile = program && program.getSourceFileByPath(path);
+                //TODO: this isn't the best place to do this...
+                if (oldSourceFile && oldSourceFile.redirect) oldSourceFile = oldSourceFile.redirect.underlying;
+                //if (!(oldSourceFile && oldSourceFile.redirect)) {
                     return foo(hostFileInformation, oldSourceFile, false, fileName, path);
-                }
+                //}
 
-                //fileName = oldSourceFile.redirect.fileName;
-                //path = oldSourceFile.redirect.path;
+                ////fileName = oldSourceFile.redirect.fileName;
+                ////path = oldSourceFile.redirect.path;
                 //This goes and gets the *real* file, but if the text is the same we will continue being a redirect.
                 //Note that we don't know whether we'll be acquring/updating the real file, so allow either.
-                const redirectFileInformation = hostCache.getOrCreateEntryByPath(fileName, path);
-                Debug.assert(!!redirectFileInformation);
-                const sf = foo(redirectFileInformation, undefined, true, fileName, path);
+                //const redirectFileInformation = hostCache.getOrCreateEntryByPath(fileName, path);
+                //Debug.assert(!!redirectFileInformation);
+                //const sf = foo(redirectFileInformation, undefined, true, fileName, path);
                 //If text is different, break redirect
-                return sf.text === oldSourceFile.text ? oldSourceFile : sf;
+                //return sf.text === oldSourceFile.text ? oldSourceFile : sf;
             }
 
+            //acquireOrUpdateOk parameter now always false...
             function foo(fileInfo: HostFileInformation, oldSourceFile: SourceFile | undefined, acquireOrUpdateOk: boolean, fileName: string, path: Path): SourceFile { //TODO: just return sf
                 // Check if the language version has changed since we last created a program; if they are the same,
                 // it is safe to reuse the sourceFiles; if not, then the shape of the AST can change, and the oldSourceFile
