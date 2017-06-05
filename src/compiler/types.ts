@@ -2285,7 +2285,8 @@ namespace ts {
         //doc
         /* @internal */ redirect?: { readonly redirectTo: SourceFile, readonly underlying: SourceFile } | undefined;
         //We need to know whether a source file is redirected to, so we can invalidate the whole program if it is changed.
-        /* @internal */ hasRedirect?: boolean;
+        //ACTUALLY, shouldn't store this here, because other source files may be changed to not redirect to this.
+        ///* @internal */ hasRedirect?: boolean;
 
         amdDependencies: AmdDependency[];
         moduleName: string;
@@ -2447,6 +2448,12 @@ namespace ts {
         //This is necessary to have so we can know whether to re-use the old source file.
         //ACTUALLY, we just store it on the redirect...
         ///* @internal */ getRedirectUnderlyingSourceFile(redirectSourceFile: SourceFile): SourceFile;
+
+        //doc
+        /* @internal */ getPackageIdOfSourceFile(sf: SourceFile): PackageId | undefined;
+
+        //doc
+        /* @internal */ sourceFileHasRedirect(sf: SourceFile): boolean;
     }
 
     /* @internal */

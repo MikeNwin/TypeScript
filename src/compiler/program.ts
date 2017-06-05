@@ -473,6 +473,11 @@ namespace ts {
 
         //mv
         const packageIdToSourceFile = createMap<SourceFile>();
+        //Map from a path to a package id.
+        const sourceFileToPackageId = createMap<PackageId>();
+        //Has a source file's path as a key.
+        const sourceFilesHavingRedirect = createMap<true>();
+
         const filesByName = createFileMap<SourceFile>();
         // stores 'filename -> file association' ignoring case
         // used to track cases when two file names differ only in casing
@@ -546,6 +551,8 @@ namespace ts {
             isSourceFileFromExternalLibrary,
             dropDiagnosticsProducingTypeChecker,
             getSourceFileFromReference,
+            getPackageIdOfSourceFile: sf => sourceFileToPackageId.get(sf.path),
+            sourceFileHasRedirect,
         };
 
         verifyCompilerOptions();
@@ -647,6 +654,9 @@ namespace ts {
                 if (file === oldSourceFile) {
                     const oldResolvedModule = oldSourceFile && oldSourceFile.resolvedModules.get(moduleName);
                     if (oldResolvedModule) {
+                        //TODO: need to test if *any* sourcefile with this packageId changed. They might become redirects of each other.
+                        oldResolvedModule.packageId;
+
                         //TOOD: HERE!!!
                         debugger; //TODO: check that this is working
                         //If oldResolvedModule had a packageId and its file has been modified, must redo resolution as packageId will probably change
@@ -787,6 +797,9 @@ namespace ts {
                     ? host.getSourceFileByPath(oldSourceFile.fileName, oldSourceFile.path, options.target)
                     : host.getSourceFile(oldSourceFile.fileName, options.target);
 
+                const opid = oldProgram.getPackageIdOfSourceFile(oldSourceFile);
+                if (opid) sourceFileToPackageId.set(newSourceFile.path, opid);
+
                 //Here is where we should deal with redirects.
                 /*
                 SO:::
@@ -799,27 +812,35 @@ namespace ts {
                         //The redirect is broken. This has the effect of adding a new file.
                         return oldProgram.structureIsReused = StructureIsReused.Not;
                     } else {
+                        //sourceFilesHavingRedirect.set(redirectTo.path, true); Not necessary, done in below `if` block.
                         //Still a redirect. Identify is preserved, so reuse the old redirect.
                         filePaths.push(oldSourceFile.path);
                         newSourceFiles.push(oldSourceFile);
                         continue;
                     }
                 }
-                if (oldSourceFile.hasRedirect) {
+                if (oldProgram.sourceFileHasRedirect(oldSourceFile)) {
                     if (newSourceFile !== oldSourceFile) {
                         //Redirect is broken.
                         return oldProgram.structureIsReused = StructureIsReused.Not;
                     } else {
                         //Redirect is still OK.
+                        sourceFilesHavingRedirect.set(oldSourceFile.path, true);
                         filePaths.push(oldSourceFile.path);
                         newSourceFiles.push(oldSourceFile);
                         continue;
                     }
                 }
+                //TODO: this is super unperformant.
+                if (oldSourceFile !== newSourceFile && oldProgram.getPackageIdOfSourceFile(oldSourceFile)) {
+                    return oldProgram.structureIsReused = StructureIsReused.Not;
+                }
+
 
                 if (!newSourceFile) {
                     return oldProgram.structureIsReused = StructureIsReused.Not;
                 }
+
 
                 newSourceFile.path = oldSourceFile.path;
                 filePaths.push(newSourceFile.path);
@@ -858,14 +879,16 @@ namespace ts {
                     // tentatively approve the file
                     modifiedSourceFiles.push({ oldFile: oldSourceFile, newFile: newSourceFile });
                 }
+                else {
+                    //for (const imp of newSourceFile.imports) {
+                    //}
+                    //if haven't changed, go through imports
+                    //if import points to package, check that that file didn't change
+                }
 
                 // if file has passed all checks it should be safe to reuse it
                 newSourceFiles.push(newSourceFile);
             }
-            //else {
-                //if haven't changed, go through imports/
-                //if import points to package, check that that file didn't change
-            //}
 
             if (oldProgram.structureIsReused !== StructureIsReused.Completely) {
                 return oldProgram.structureIsReused;
@@ -1571,8 +1594,14 @@ namespace ts {
             }
         }
 
+        //mv
+        function sourceFileHasRedirect(sf: SourceFile): boolean {
+            sourceFileHasRedirect;
+            return !!sourceFilesHavingRedirect.get(sf.path);
+        }
+
         function createRedirectSourceFile(redirectTo: SourceFile, underlying: SourceFile, fileName: string, path: Path): SourceFile {
-            redirectTo.hasRedirect = true;
+            sourceFilesHavingRedirect.set(redirectTo.path, true);
 
             const r: SourceFile = Object.create(redirectTo);
             r.fileName = fileName;
@@ -1640,6 +1669,7 @@ namespace ts {
             if (fileFromPackageId) {
                 const dupFile = createRedirectSourceFile(fileFromPackageId, file, fileName, path);
                 filesByName.set(path, dupFile);
+                sourceFileToPackageId.set(path, packageId);
                 files.push(dupFile);
                 return dupFile;
             }
@@ -1647,6 +1677,7 @@ namespace ts {
             if (file && packageId) {
                 // If we got here, then this is the first source file to have this packageId.
                 packageIdToSourceFile.set(packageKey, file);
+                sourceFileToPackageId.set(path, packageId);
             }
             filesByName.set(path, file);
             if (file) {

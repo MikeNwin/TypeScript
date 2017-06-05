@@ -55,7 +55,14 @@ edit.insert(" "); // Dummy change
 
 verify.errorExistsAfterMarker("error");
 
+// Undo the change
 goTo.marker("defBX");
 edit.deleteAtCaret();
+goTo.marker("bVersionPatch");
+edit.deleteAtCaret();
+
+debug.printCurrentFileState();
 
 verify.not.errorExistsAfterMarker("error");
+
+
